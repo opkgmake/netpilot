@@ -1,27 +1,24 @@
 package providers
 
 import (
-	"fmt"
-	"os/exec"
 	"strconv"
+	"strings"
 )
 
 // ApplyCake applies the CAKE qdisc by executing the 'tc' command.
 func ApplyCake(ifaceName string, bandwidthMbit uint32) error {
 	// First, try to delete any existing root qdisc to avoid conflicts.
-	DeleteRootQdisc(ifaceName)
+	if err := DeleteRootQdisc(ifaceName); err != nil {
+		return err
+	}
 
 	// Convert bandwidth to a string like "100mbit"
 	rate := strconv.FormatUint(uint64(bandwidthMbit), 10) + "mbit"
 
-	// Prepare the command: sudo tc qdisc add dev <iface> root cake bandwidth <rate>
-	cmd := exec.Command("sudo", "tc", "qdisc", "add", "dev", ifaceName, "root", "cake", "bandwidth", rate)
-
-	// Execute the command and capture its output (stdout and stderr combined)
-	output, err := cmd.CombinedOutput()
+	// Run the command (with automatic privilege escalation when possible).
+	output, err := runTcCommand("qdisc", "add", "dev", ifaceName, "root", "cake", "bandwidth", rate)
 	if err != nil {
-		// If there's an error, return a detailed message including the command's output
-		return fmt.Errorf("failed to apply cake qdisc: %v, output: %s", err, string(output))
+		return formatTcError("failed to apply cake qdisc", err, output)
 	}
 
 	return nil
@@ -29,11 +26,14 @@ func ApplyCake(ifaceName string, bandwidthMbit uint32) error {
 
 // DeleteRootQdisc removes the root qdisc by executing the 'tc' command.
 func DeleteRootQdisc(ifaceName string) error {
-	cmd := exec.Command("sudo", "tc", "qdisc", "del", "dev", ifaceName, "root")
-
-	// We can ignore errors here, as the qdisc might not exist.
-	// In a production app, we might want to log this.
-	cmd.Run()
-
+	output, err := runTcCommand("qdisc", "del", "dev", ifaceName, "root")
+	if err != nil {
+		// Silently ignore the "qdisc not found" error, but surface everything else.
+		msg := strings.ToLower(string(output))
+		if strings.Contains(msg, "no such file or directory") {
+			return nil
+		}
+		return formatTcError("failed to delete existing qdisc", err, output)
+	}
 	return nil
 }

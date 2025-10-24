@@ -1,10 +1,7 @@
 // backend/qos/providers/fqcodel.go
 package providers
 
-import (
-	"fmt"
-	"os/exec"
-)
+// No extra imports required.
 
 // ApplyFqCodel applies the fq_codel qdisc.
 // NOTE: fq_codel itself doesn't have a bandwidth parameter.
@@ -13,14 +10,14 @@ import (
 // on links that are already shaped by the ISP.
 func ApplyFqCodel(ifaceName string) error {
 	// First, clean up any existing root qdisc.
-	DeleteRootQdisc(ifaceName)
+	if err := DeleteRootQdisc(ifaceName); err != nil {
+		return err
+	}
 
-	// Prepare the command: sudo tc qdisc add dev <iface> root fq_codel
-	cmd := exec.Command("tc", "qdisc", "add", "dev", ifaceName, "root", "fq_codel")
-
-	output, err := cmd.CombinedOutput()
+	// Run the command (with automatic privilege escalation when possible).
+	output, err := runTcCommand("qdisc", "add", "dev", ifaceName, "root", "fq_codel")
 	if err != nil {
-		return fmt.Errorf("failed to apply fq_codel qdisc: %v, output: %s", err, string(output))
+		return formatTcError("failed to apply fq_codel qdisc", err, output)
 	}
 
 	return nil
