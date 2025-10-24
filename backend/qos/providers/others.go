@@ -1,24 +1,20 @@
 // backend/qos/providers/others.go
 package providers
 
-import (
-	"fmt"
-	"os/exec"
-	"strconv"
-)
+import "strconv"
 
 // ApplyTbf applies the Token Bucket Filter qdisc for simple rate limiting.
 func ApplyTbf(ifaceName string, bandwidthMbit uint32) error {
-	DeleteRootQdisc(ifaceName)
+	if err := DeleteRootQdisc(ifaceName); err != nil {
+		return err
+	}
 	rate := strconv.FormatUint(uint64(bandwidthMbit), 10) + "mbit"
 
 	// tbf requires a buffer size and limit, we use some sensible defaults.
 	// Command: tc qdisc add dev <iface> root tbf rate <rate> buffer 1600 limit 3000
-	cmd := exec.Command("tc", "qdisc", "add", "dev", ifaceName, "root", "tbf", "rate", rate, "buffer", "1600", "limit", "3000")
-
-	output, err := cmd.CombinedOutput()
+	output, err := runTcCommand("qdisc", "add", "dev", ifaceName, "root", "tbf", "rate", rate, "buffer", "1600", "limit", "3000")
 	if err != nil {
-		return fmt.Errorf("failed to apply tbf qdisc: %v, output: %s", err, string(output))
+		return formatTcError("failed to apply tbf qdisc", err, output)
 	}
 	return nil
 }
@@ -30,11 +26,12 @@ func ApplyPfifoFast(ifaceName string) error {
 }
 
 func ApplySfq(ifaceName string) error {
-	DeleteRootQdisc(ifaceName)
-	cmd := exec.Command("tc", "qdisc", "add", "dev", ifaceName, "root", "sfq")
-	output, err := cmd.CombinedOutput()
+	if err := DeleteRootQdisc(ifaceName); err != nil {
+		return err
+	}
+	output, err := runTcCommand("qdisc", "add", "dev", ifaceName, "root", "sfq")
 	if err != nil {
-		return fmt.Errorf("failed to apply sfq qdisc: %v, output: %s", err, string(output))
+		return formatTcError("failed to apply sfq qdisc", err, output)
 	}
 	return nil
 }
